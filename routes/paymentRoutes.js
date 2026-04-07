@@ -1,25 +1,29 @@
-const express = require("express")
-const router = express.Router()
-const Stripe = require("stripe")
+const express = require("express");
+const router = express.Router();
 
-const stripe = Stripe(process.env.STRIPE_SECRET_KEY)
+const paymentController = require("../controllers/paymentController");
+const authMiddleware = require("../middleware/authMiddleware");
 
-router.post("/create-payment-intent", async (req, res) => {
-  try {
-    const { amount } = req.body
+/*
+ Create Stripe checkout session
+ This route needs JSON body parsing
+*/
+router.post(
+  "/create-checkout-session",
+  express.json(),
+  authMiddleware,
+  paymentController.createCheckoutSession
+);
 
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: amount,
-      currency: "gbp",
-      payment_method_types: ["card"]
-    })
+/*
+ Stripe webhook endpoint
+ IMPORTANT: must use raw body
+ Do NOT protect with auth
+*/
+router.post(
+  "/webhook",
+  express.raw({ type: "application/json" }),
+  paymentController.handleWebhook
+);
 
-    res.send({
-      clientSecret: paymentIntent.client_secret
-    })
-  } catch (error) {
-    res.status(500).json({ error: error.message })
-  }
-})
-
-module.exports = router
+module.exports = router;

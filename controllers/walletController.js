@@ -1,36 +1,75 @@
 const Wallet = require("../models/Wallet");
+const Transaction = require("../models/Transaction");
 
-exports.getWallet = async (req, res) => {
+exports.createWallet = async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = req.user.userId;
 
-    let wallet = await Wallet.findOne({ userId });
+    const existingWallet = await Wallet.findOne({ userId });
 
-    if (!wallet) {
-      wallet = await Wallet.create({ userId, balance: 0 });
+    if (existingWallet) {
+      return res.status(200).json(existingWallet);
     }
 
-    res.json(wallet);
+    const wallet = new Wallet({
+      userId,
+      balance: 0
+    });
+
+    await wallet.save();
+
+    res.status(201).json(wallet);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({
+      error: error.message
+    });
   }
 };
 
-exports.addFunds = async (req, res) => {
+exports.getWallet = async (req, res) => {
   try {
-    const { userId, amount } = req.body;
+    const userId = req.user.userId;
 
-    let wallet = await Wallet.findOne({ userId });
-
-    if (!wallet) {
-      wallet = await Wallet.create({ userId, balance: 0 });
+    if (req.params.userId !== userId) {
+      return res.status(403).json({
+        message: "Access denied"
+      });
     }
 
-    wallet.balance += amount;
-    await wallet.save();
+    const wallet = await Wallet.findOne({ userId });
+
+    if (!wallet) {
+      return res.status(404).json({
+        message: "Wallet not found"
+      });
+    }
 
     res.json(wallet);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({
+      error: error.message
+    });
+  }
+};
+
+exports.getTransactions = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    if (req.params.userId !== userId) {
+      return res.status(403).json({
+        message: "Access denied"
+      });
+    }
+
+    const transactions = await Transaction.find({ userId }).sort({
+      createdAt: -1
+    });
+
+    res.json(transactions);
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
   }
 };

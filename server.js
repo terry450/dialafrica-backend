@@ -10,6 +10,7 @@ const callRoutes = require("./routes/callRoutes");
 const walletRoutes = require("./routes/walletRoutes");
 const contactRoutes = require("./routes/contactRoutes");
 const adminRoutes = require("./routes/adminRoutes");
+const paymentRoutes = require("./routes/paymentRoutes");
 
 const app = express();
 
@@ -21,15 +22,18 @@ if (!process.env.JWT_SECRET) {
   throw new Error("JWT_SECRET is required");
 }
 
-app.use(cors());
-app.use(express.json());
+if (!process.env.STRIPE_SECRET_KEY) {
+  throw new Error("STRIPE_SECRET_KEY is required");
+}
 
-/*
-  Global rate limiter
-  Limits each IP to 100 requests per 15 minutes
-*/
+if (!process.env.STRIPE_WEBHOOK_SECRET) {
+  throw new Error("STRIPE_WEBHOOK_SECRET is required");
+}
+
+app.use(cors());
+
 const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
@@ -38,12 +42,6 @@ const globalLimiter = rateLimit({
   }
 });
 
-app.use(globalLimiter);
-
-/*
-  Stricter limiter for authentication routes
-  Prevents brute-force login attempts
-*/
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
@@ -54,8 +52,17 @@ const authLimiter = rateLimit({
   }
 });
 
-app.use("/api/auth", authLimiter, authRoutes);
+app.use(globalLimiter);
 
+/*
+  Stripe webhook must come before express.json()
+  and must use raw body
+*/
+app.use("/api/payments", paymentRoutes);
+
+app.use(express.json());
+
+app.use("/api/auth", authLimiter, authRoutes);
 app.use("/api/calls", callRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/contacts", contactRoutes);
@@ -65,9 +72,14 @@ app.get("/", (req, res) => {
   res.send("DialAfrica API is running");
 });
 
-/*
-  Central error handler
-*/
+app.get("/payment-success", (req, res) => {
+  res.send("Payment successful");
+});
+
+app.get("/payment-cancel", (req, res) => {
+  res.send("Payment cancelled");
+});
+
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
   res.status(500).json({
