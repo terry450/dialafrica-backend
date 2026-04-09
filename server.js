@@ -11,6 +11,8 @@ const walletRoutes = require("./routes/walletRoutes");
 const contactRoutes = require("./routes/contactRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
+const routeRoutes = require("./routes/routeRoutes");
+const twilioRoutes = require("./routes/twilioRoutes");
 
 const app = express();
 
@@ -28,6 +30,18 @@ if (!process.env.STRIPE_SECRET_KEY) {
 
 if (!process.env.STRIPE_WEBHOOK_SECRET) {
   throw new Error("STRIPE_WEBHOOK_SECRET is required");
+}
+
+if (!process.env.TWILIO_ACCOUNT_SID) {
+  throw new Error("TWILIO_ACCOUNT_SID is required");
+}
+
+if (!process.env.TWILIO_AUTH_TOKEN) {
+  throw new Error("TWILIO_AUTH_TOKEN is required");
+}
+
+if (!process.env.TWILIO_PHONE_NUMBER) {
+  throw new Error("TWILIO_PHONE_NUMBER is required");
 }
 
 app.use(cors());
@@ -55,11 +69,19 @@ const authLimiter = rateLimit({
 app.use(globalLimiter);
 
 /*
-  Stripe webhook must come before express.json()
-  and must use raw body
+  Stripe webhook routes first
+  Twilio webhooks also need raw/form-safe handling before JSON-heavy routes
 */
 app.use("/api/payments", paymentRoutes);
 
+/*
+  Twilio sends application/x-www-form-urlencoded to webhooks
+*/
+app.use("/api/twilio", express.urlencoded({ extended: true }), twilioRoutes);
+
+/*
+  JSON parser for normal routes
+*/
 app.use(express.json());
 
 app.use("/api/auth", authLimiter, authRoutes);
@@ -67,9 +89,19 @@ app.use("/api/calls", callRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/contacts", contactRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/routes", routeRoutes);
 
 app.get("/", (req, res) => {
   res.send("DialAfrica API is running");
+});
+
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    service: "DialAfrica API",
+    uptimeSeconds: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString()
+  });
 });
 
 app.get("/payment-success", (req, res) => {

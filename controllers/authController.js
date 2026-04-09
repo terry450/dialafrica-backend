@@ -1,5 +1,6 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+
 const User = require("../models/User");
 
 exports.register = async (req, res) => {
@@ -8,13 +9,11 @@ exports.register = async (req, res) => {
 
     if (!email || !password) {
       return res.status(400).json({
-        message: "email and password are required"
+        message: "Email and password are required"
       });
     }
 
-    const normalizedEmail = String(email).trim().toLowerCase();
-
-    const existingUser = await User.findOne({ email: normalizedEmail });
+    const existingUser = await User.findOne({ email });
 
     if (existingUser) {
       return res.status(400).json({
@@ -25,18 +24,30 @@ exports.register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const user = new User({
-      email: normalizedEmail,
-      password: hashedPassword
+      email,
+      password: hashedPassword,
+      isAdmin: false
     });
 
     await user.save();
 
-    res.json({
+    const token = jwt.sign(
+      {
+        userId: user._id
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "7d"
+      }
+    );
+
+    res.status(201).json({
       message: "User registered",
-      userId: user._id
+      token,
+      userId: user._id,
+      isAdmin: user.isAdmin
     });
   } catch (error) {
-    console.error("register error:", error);
     res.status(500).json({
       error: error.message
     });
@@ -45,23 +56,15 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
   try {
-    if (!process.env.JWT_SECRET) {
-      return res.status(500).json({
-        message: "JWT_SECRET is not configured"
-      });
-    }
-
     const { email, password } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({
-        message: "email and password are required"
+        message: "Email and password are required"
       });
     }
 
-    const normalizedEmail = String(email).trim().toLowerCase();
-
-    const user = await User.findOne({ email: normalizedEmail });
+    const user = await User.findOne({ email });
 
     if (!user) {
       return res.status(400).json({
@@ -76,23 +79,27 @@ exports.login = async (req, res) => {
 
     if (!isMatch) {
       return res.status(400).json({
-        message: "Wrong password"
+        message: "Invalid credentials"
       });
     }
 
     const token = jwt.sign(
-      { userId: user._id },
+      {
+        userId: user._id
+      },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" }
+      {
+        expiresIn: "7d"
+      }
     );
 
     res.json({
       message: "Login successful",
       token,
-      userId: user._id
+      userId: user._id,
+      isAdmin: user.isAdmin
     });
   } catch (error) {
-    console.error("login error:", error);
     res.status(500).json({
       error: error.message
     });

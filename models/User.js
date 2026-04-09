@@ -9,15 +9,22 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true
     },
-
     password: {
       type: String,
       required: true
     },
-
     isAdmin: {
       type: Boolean,
       default: false
+    },
+    verifiedCallerId: {
+      type: String,
+      default: ""
+    },
+    callerIdMode: {
+      type: String,
+      enum: ["platform", "user_verified"],
+      default: "platform"
     }
   },
   {
