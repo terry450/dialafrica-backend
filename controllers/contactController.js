@@ -1,12 +1,14 @@
 const Contact = require("../models/Contact");
 
+// Add contact
 exports.addContact = async (req, res) => {
   try {
-    const { userId, name, phoneNumber } = req.body;
+    const userId = req.user.userId;
+    const { name, phoneNumber } = req.body;
 
-    if (!userId || !name || !phoneNumber) {
+    if (!name || !phoneNumber) {
       return res.status(400).json({
-        message: "userId, name and phoneNumber are required"
+        message: "Name and phoneNumber are required"
       });
     }
 
@@ -18,45 +20,41 @@ exports.addContact = async (req, res) => {
 
     await contact.save();
 
-    res.json(contact);
-  } catch (error) {
+    res.status(201).json({
+      message: "Contact added",
+      contact
+    });
+
+  } catch (err) {
+    console.error("Add contact error:", err);
     res.status(500).json({
-      error: error.message
+      message: "Failed to add contact"
     });
   }
 };
 
+// Get contacts
 exports.getContacts = async (req, res) => {
   try {
-    const { userId } = req.params;
-
-    const contacts = await Contact.find({ userId }).sort({ createdAt: -1 });
-
-    res.json(contacts);
-  } catch (error) {
-    res.status(500).json({
-      error: error.message
-    });
-  }
-};
-
-exports.getFavorites = async (req, res) => {
-  try {
-    const { userId } = req.params;
+    const userId = req.user.userId;
 
     const contacts = await Contact.find({
-      userId,
-      isFavorite: true
-    }).sort({ createdAt: -1 });
+      userId
+    }).sort({
+      createdAt: -1
+    });
 
     res.json(contacts);
-  } catch (error) {
+
+  } catch (err) {
+    console.error("Get contacts error:", err);
     res.status(500).json({
-      error: error.message
+      message: "Failed to fetch contacts"
     });
   }
 };
 
+// Toggle favorite
 exports.toggleFavorite = async (req, res) => {
   try {
     const { contactId } = req.params;
@@ -70,16 +68,23 @@ exports.toggleFavorite = async (req, res) => {
     }
 
     contact.isFavorite = !contact.isFavorite;
+
     await contact.save();
 
-    res.json(contact);
-  } catch (error) {
+    res.json({
+      message: "Favorite updated",
+      contact
+    });
+
+  } catch (err) {
+    console.error("Toggle favorite error:", err);
     res.status(500).json({
-      error: error.message
+      message: "Failed to update favorite"
     });
   }
 };
 
+// Delete contact
 exports.deleteContact = async (req, res) => {
   try {
     const { contactId } = req.params;
@@ -89,9 +94,11 @@ exports.deleteContact = async (req, res) => {
     res.json({
       message: "Contact deleted"
     });
-  } catch (error) {
+
+  } catch (err) {
+    console.error("Delete contact error:", err);
     res.status(500).json({
-      error: error.message
+      message: "Failed to delete contact"
     });
   }
 };
