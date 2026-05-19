@@ -10,6 +10,12 @@ router.post(
   contactController.addContact
 );
 
+router.post(
+  "/sync",
+  authMiddleware,
+  contactController.syncContacts
+);
+
 router.get(
   "/:userId",
   authMiddleware,
