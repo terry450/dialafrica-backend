@@ -27,11 +27,12 @@ function getOutgoingCallerId(user) {
 
   return process.env.TWILIO_PHONE_NUMBER;
 }
-
 async function cleanupStaleCalls(userId) {
-  const staleStatuses = ["initiated", "ringing"];
-  const staleBefore = new Date(Date.now() - 2 * 60 * 1000); // 2 minutes
+  const staleStatuses = ["initiated", "ringing", "connected"];
 
+  // Auto-clean calls stuck longer than 30 seconds
+  const staleBefore = new Date(Date.now() - 30 * 1000);
+  
   const staleCalls = await Call.find({
     userId,
     status: { $in: staleStatuses },
