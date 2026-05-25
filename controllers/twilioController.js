@@ -12,6 +12,7 @@ const client = twilio(
 
 function isValidInternationalNumber(number) {
   if (typeof number !== "string") return false;
+
   return /^\+[1-9]\d{7,14}$/.test(number.trim());
 }
 
@@ -29,22 +30,23 @@ function getOutgoingCallerId(user) {
 }
 
 /*
-  Production-safe stale cleanup
-
-  - initiated/ringing older than 60 sec = broken setup
-  - connected older than 6 hours = abandoned session
+  Cleanup broken sessions safely
 */
 async function cleanupStaleCalls(userId) {
 
-  // Cleanup stuck initiated/ringing calls
+  // setup calls stuck too long
   const staleSetupBefore = new Date(
-    Date.now() - 60 * 1000
+    Date.now() - 120 * 1000
   );
 
   const staleSetupCalls = await Call.find({
     userId,
-    status: { $in: ["initiated", "ringing"] },
-    startTime: { $lte: staleSetupBefore }
+    status: {
+      $in: ["initiated", "ringing"]
+    },
+    startTime: {
+      $lte: staleSetupBefore
+    }
   });
 
   for (const call of staleSetupCalls) {
@@ -60,7 +62,7 @@ async function cleanupStaleCalls(userId) {
     await call.save();
   }
 
-  // Cleanup abandoned connected calls
+  // connected calls abandoned for too long
   const staleConnectedBefore = new Date(
     Date.now() - 6 * 60 * 60 * 1000
   );
@@ -68,13 +70,16 @@ async function cleanupStaleCalls(userId) {
   const staleConnectedCalls = await Call.find({
     userId,
     status: "connected",
-    startTime: { $lte: staleConnectedBefore }
+    startTime: {
+      $lte: staleConnectedBefore
+    }
   });
 
   for (const call of staleConnectedCalls) {
     call.status = "failed";
     call.billingStatus = "failed";
     call.endTime = new Date();
+
     call.disconnectReason =
       "Abandoned connected call auto-closed";
 
@@ -89,8 +94,13 @@ async function cleanupStaleCalls(userId) {
 
 exports.startTwilioCall = async (req, res) => {
   try {
+
     const userId = req.user.userId;
-    const { receiverNumber, callerNumber } = req.body;
+
+    const {
+      receiverNumber,
+      callerNumber
+    } = req.body;
 
     if (!receiverNumber || !callerNumber) {
       return res.status(400).json({
@@ -99,21 +109,30 @@ exports.startTwilioCall = async (req, res) => {
       });
     }
 
-    if (!isValidInternationalNumber(receiverNumber)) {
+    if (
+      !isValidInternationalNumber(
+        receiverNumber
+      )
+    ) {
       return res.status(400).json({
         message:
-          "receiverNumber must be in international format like +263771234567"
+          "receiverNumber must be in international format"
       });
     }
 
-    if (!isValidInternationalNumber(callerNumber)) {
+    if (
+      !isValidInternationalNumber(
+        callerNumber
+      )
+    ) {
       return res.status(400).json({
         message:
-          "callerNumber must be in international format like +447123456789"
+          "callerNumber must be in international format"
       });
     }
 
-    const user = await User.findById(userId);
+    const user =
+      await User.findById(userId);
 
     if (!user) {
       return res.status(404).json({
@@ -121,22 +140,18 @@ exports.startTwilioCall = async (req, res) => {
       });
     }
 
-    const rateInfo = getRateFromNumber(receiverNumber);
+    const rateInfo =
+      getRateFromNumber(receiverNumber);
 
     if (!rateInfo) {
       return res.status(400).json({
-        message: "Unsupported destination country"
-      });
-    }
-
-    if (!rateInfo.active) {
-      return res.status(400).json({
         message:
-          `${rateInfo.destinationCountry} is currently unavailable`
+          "Unsupported destination country"
       });
     }
 
-    const wallet = await Wallet.findOne({ userId });
+    const wallet =
+      await Wallet.findOne({ userId });
 
     if (!wallet) {
       return res.status(404).json({
@@ -144,43 +159,45 @@ exports.startTwilioCall = async (req, res) => {
       });
     }
 
-    if (wallet.balance < rateInfo.ratePerMinute) {
+    if (
+      wallet.balance <
+      rateInfo.ratePerMinute
+    ) {
       return res.status(400).json({
-        message: "Not enough balance to start call"
+        message:
+          "Not enough balance to start call"
       });
     }
 
     const cleanedUpCount =
       await cleanupStaleCalls(userId);
 
-    /*
-      Only block setup-stage calls.
-      Connected calls are managed by Twilio lifecycle.
-    */
-    const existingLiveCall = await Call.findOne({
-      userId,
-      status: { $in: ["initiated", "ringing"] }
-    });
+    const existingLiveCall =
+      await Call.findOne({
+        userId,
+        status: {
+          $in: [
+            "initiated",
+            "ringing",
+            "connected"
+          ]
+        }
+      });
 
     if (existingLiveCall) {
       return res.status(400).json({
         message:
-          "User already has an active call session"
+          "User already has active call"
       });
     }
 
     const maxMinutes = Math.floor(
-      wallet.balance / rateInfo.ratePerMinute
+      wallet.balance /
+      rateInfo.ratePerMinute
     );
 
-    const maxSeconds = maxMinutes * 60;
-
-    if (maxSeconds <= 0) {
-      return res.status(400).json({
-        message:
-          "Not enough balance to place this call"
-      });
-    }
+    const maxSeconds =
+      maxMinutes * 60;
 
     const outgoingCallerId =
       getOutgoingCallerId(user);
@@ -204,7 +221,9 @@ exports.startTwilioCall = async (req, res) => {
 
     const twilioCall =
       await client.calls.create({
+
         to: callerNumber,
+
         from:
           process.env.TWILIO_PHONE_NUMBER,
 
@@ -230,42 +249,57 @@ exports.startTwilioCall = async (req, res) => {
         ]
       });
 
-    call.providerCallId = twilioCall.sid;
+    call.providerCallId =
+      twilioCall.sid;
 
     await call.save();
 
-    res.json({
-      message: "Twilio call initiated",
+    return res.json({
+      message:
+        "Twilio call initiated",
+
       callId: call._id,
-      providerCallId: twilioCall.sid,
+
+      providerCallId:
+        twilioCall.sid,
+
       provider: "twilio",
+
       status: call.status,
+
       destinationCountry:
         call.destinationCountry,
+
       ratePerMinute:
         call.ratePerMinute,
+
       outgoingCallerIdUsed:
         outgoingCallerId,
+
       maxMinutes,
       maxSeconds,
+
       staleCallsClosed:
         cleanedUpCount
     });
 
   } catch (error) {
+
     console.error(
       "startTwilioCall error:",
       error
     );
 
-    res.status(500).json({
+    return res.status(500).json({
       error: error.message
     });
   }
 };
 
 exports.voiceWebhook = async (req, res) => {
+
   try {
+
     const {
       callId,
       receiverNumber,
@@ -276,22 +310,14 @@ exports.voiceWebhook = async (req, res) => {
     const VoiceResponse =
       twilio.twiml.VoiceResponse;
 
-    const response = new VoiceResponse();
-
-    if (!callId || !receiverNumber) {
-      response.say(
-        "Call configuration error."
-      );
-
-      return res
-        .type("text/xml")
-        .send(response.toString());
-    }
+    const response =
+      new VoiceResponse();
 
     const call =
       await Call.findById(callId);
 
     if (!call) {
+
       response.say(
         "Call record not found."
       );
@@ -301,18 +327,11 @@ exports.voiceWebhook = async (req, res) => {
         .send(response.toString());
     }
 
-    call.status = "connected";
-
-    if (!call.answerTime) {
-      call.answerTime = new Date();
-    }
-
-    await call.save();
-
     const parsedMaxSeconds =
       Number(maxSeconds || 0);
 
     const dialOptions = {
+
       callerId:
         outgoingCallerId &&
         isValidInternationalNumber(
@@ -324,7 +343,6 @@ exports.voiceWebhook = async (req, res) => {
     };
 
     if (
-      !Number.isNaN(parsedMaxSeconds) &&
       parsedMaxSeconds > 0
     ) {
       dialOptions.timeLimit =
@@ -341,6 +359,7 @@ exports.voiceWebhook = async (req, res) => {
       .send(response.toString());
 
   } catch (error) {
+
     console.error(
       "voiceWebhook error:",
       error
@@ -363,13 +382,21 @@ exports.voiceWebhook = async (req, res) => {
 };
 
 exports.statusWebhook = async (req, res) => {
+
   try {
-    const { callId } = req.query;
+
+    const { callId } =
+      req.query;
 
     const {
       CallStatus,
       CallDuration
     } = req.body;
+
+    console.log(
+      "TWILIO STATUS:",
+      CallStatus
+    );
 
     if (!callId) {
       return res
@@ -387,6 +414,7 @@ exports.statusWebhook = async (req, res) => {
     }
 
     if (CallStatus === "ringing") {
+
       call.status = "ringing";
 
       await call.save();
@@ -396,11 +424,21 @@ exports.statusWebhook = async (req, res) => {
         .send("ok");
     }
 
-    if (CallStatus === "in-progress") {
-      call.status = "connected";
+    /*
+      THIS IS THE FIX
+    */
+
+    if (
+      CallStatus === "answered" ||
+      CallStatus === "in-progress"
+    ) {
+
+      call.status =
+        "connected";
 
       if (!call.answerTime) {
-        call.answerTime = new Date();
+        call.answerTime =
+          new Date();
       }
 
       await call.save();
@@ -420,27 +458,29 @@ exports.statusWebhook = async (req, res) => {
       ].includes(CallStatus)
     ) {
 
+      call.endTime =
+        new Date();
+
       const wallet =
         await Wallet.findOne({
-          userId: call.userId
+          userId:
+            call.userId
         });
 
-      call.endTime = new Date();
-
       if (
-        !call.answerTime &&
-        [
-          "busy",
-          "no-answer",
-          "failed",
-          "canceled"
-        ].includes(CallStatus)
+        !call.answerTime
       ) {
 
-        call.status = "failed";
-        call.billingStatus = "failed";
+        call.status =
+          "failed";
+
+        call.billingStatus =
+          "failed";
+
         call.durationSeconds = 0;
+
         call.durationMinutesRounded = 0;
+
         call.cost = 0;
 
         call.disconnectReason =
@@ -454,8 +494,12 @@ exports.statusWebhook = async (req, res) => {
       }
 
       if (!wallet) {
-        call.status = "failed";
-        call.billingStatus = "failed";
+
+        call.status =
+          "failed";
+
+        call.billingStatus =
+          "failed";
 
         call.disconnectReason =
           "Wallet not found";
@@ -470,7 +514,9 @@ exports.statusWebhook = async (req, res) => {
       const durationSeconds =
         Math.max(
           0,
-          Number(CallDuration || 0)
+          Number(
+            CallDuration || 0
+          )
         );
 
       const durationMinutesRounded =
@@ -478,12 +524,9 @@ exports.statusWebhook = async (req, res) => {
           durationSeconds / 60
         );
 
-      const ratePerMinute =
-        call.ratePerMinute || 10;
-
       const cost =
         durationMinutesRounded *
-        ratePerMinute;
+        call.ratePerMinute;
 
       call.durationSeconds =
         durationSeconds;
@@ -493,16 +536,23 @@ exports.statusWebhook = async (req, res) => {
 
       call.cost = cost;
 
-      if (CallStatus === "completed") {
+      if (
+        CallStatus ===
+        "completed"
+      ) {
 
-        if (wallet.balance < cost) {
+        if (
+          wallet.balance < cost
+        ) {
 
-          call.status = "failed";
+          call.status =
+            "failed";
 
-          call.billingStatus = "failed";
+          call.billingStatus =
+            "failed";
 
           call.disconnectReason =
-            "Insufficient balance to bill completed call";
+            "Insufficient balance";
 
           await call.save();
 
@@ -515,34 +565,44 @@ exports.statusWebhook = async (req, res) => {
 
         await wallet.save();
 
-        call.status = "completed";
+        call.status =
+          "completed";
 
-        call.billingStatus = "billed";
+        call.billingStatus =
+          "billed";
 
         call.disconnectReason =
           "Call ended normally";
 
         await Transaction.create({
-          userId: call.userId,
-          type: "call_charge",
+          userId:
+            call.userId,
+
+          type:
+            "call_charge",
+
           amount: cost,
 
           description:
-            `Twilio call charge to ${call.receiverNumber} (${call.destinationCountry})`,
+            `Twilio call charge to ${call.receiverNumber}`,
 
-          status: "completed",
+          status:
+            "completed",
 
-          paymentProvider: "twilio",
+          paymentProvider:
+            "twilio",
 
           paymentReference:
-            call.providerCallId || ""
+            call.providerCallId
         });
 
       } else {
 
-        call.status = "failed";
+        call.status =
+          "failed";
 
-        call.billingStatus = "failed";
+        call.billingStatus =
+          "failed";
 
         call.disconnectReason =
           `Twilio status: ${CallStatus}`;
@@ -556,6 +616,7 @@ exports.statusWebhook = async (req, res) => {
       .send("ok");
 
   } catch (error) {
+
     console.error(
       "statusWebhook error:",
       error
@@ -568,8 +629,11 @@ exports.statusWebhook = async (req, res) => {
 };
 
 exports.setVerifiedCallerId = async (req, res) => {
+
   try {
-    const userId = req.user.userId;
+
+    const userId =
+      req.user.userId;
 
     const {
       verifiedCallerId,
@@ -581,7 +645,8 @@ exports.setVerifiedCallerId = async (req, res) => {
 
     if (!user) {
       return res.status(404).json({
-        message: "User not found"
+        message:
+          "User not found"
       });
     }
 
@@ -598,7 +663,7 @@ exports.setVerifiedCallerId = async (req, res) => {
 
         return res.status(400).json({
           message:
-            "verifiedCallerId must be in international format like +447123456789"
+            "verifiedCallerId invalid"
         });
       }
 
@@ -606,18 +671,22 @@ exports.setVerifiedCallerId = async (req, res) => {
         verifiedCallerId.trim();
     }
 
-    if (callerIdMode !== undefined) {
+    if (
+      callerIdMode !== undefined
+    ) {
 
       if (
         ![
           "platform",
           "user_verified"
-        ].includes(callerIdMode)
+        ].includes(
+          callerIdMode
+        )
       ) {
 
         return res.status(400).json({
           message:
-            "callerIdMode must be either platform or user_verified"
+            "Invalid callerIdMode"
         });
       }
 
@@ -627,7 +696,7 @@ exports.setVerifiedCallerId = async (req, res) => {
 
     await user.save();
 
-    res.json({
+    return res.json({
       message:
         "Caller ID settings updated",
 
@@ -639,33 +708,37 @@ exports.setVerifiedCallerId = async (req, res) => {
     });
 
   } catch (error) {
+
     console.error(
       "setVerifiedCallerId error:",
       error
     );
 
-    res.status(500).json({
-      error: error.message
+    return res.status(500).json({
+      error:
+        error.message
     });
   }
 };
 
 exports.getCallerIdSettings = async (req, res) => {
+
   try {
 
-    const userId =
-      req.user.userId;
-
     const user =
-      await User.findById(userId);
+      await User.findById(
+        req.user.userId
+      );
 
     if (!user) {
       return res.status(404).json({
-        message: "User not found"
+        message:
+          "User not found"
       });
     }
 
-    res.json({
+    return res.json({
+
       verifiedCallerId:
         user.verifiedCallerId,
 
@@ -673,33 +746,36 @@ exports.getCallerIdSettings = async (req, res) => {
         user.callerIdMode,
 
       fallbackPlatformNumber:
-        process.env.TWILIO_PHONE_NUMBER
+        process.env
+          .TWILIO_PHONE_NUMBER
     });
 
   } catch (error) {
+
     console.error(
       "getCallerIdSettings error:",
       error
     );
 
-    res.status(500).json({
-      error: error.message
+    return res.status(500).json({
+      error:
+        error.message
     });
   }
 };
 
 exports.cleanupMyStaleCalls = async (req, res) => {
+
   try {
 
-    const userId =
-      req.user.userId;
-
     const cleanedUpCount =
-      await cleanupStaleCalls(userId);
+      await cleanupStaleCalls(
+        req.user.userId
+      );
 
-    res.json({
+    return res.json({
       message:
-        "Stale calls cleanup completed",
+        "Cleanup completed",
 
       staleCallsClosed:
         cleanedUpCount
@@ -712,8 +788,9 @@ exports.cleanupMyStaleCalls = async (req, res) => {
       error
     );
 
-    res.status(500).json({
-      error: error.message
+    return res.status(500).json({
+      error:
+        error.message
     });
   }
 };
