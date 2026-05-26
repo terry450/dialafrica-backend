@@ -902,3 +902,78 @@ exports.cleanupMyStaleCalls = async (req, res) => {
     });
   }
 };
+exports.forceEndActiveCall = async (req, res) => {
+
+  try {
+
+    const userId = req.user.userId;
+
+    const activeCalls = await Call.find({
+      userId,
+      status: {
+        $in: [
+          "initiated",
+          "ringing",
+          "connected"
+        ]
+      }
+    });
+
+    for (const call of activeCalls) {
+
+      call.status = "failed";
+
+      call.billingStatus = "failed";
+
+      call.endTime = new Date();
+
+      call.durationSeconds = 0;
+
+      call.durationMinutesRounded = 0;
+
+      call.cost = 0;
+
+      call.disconnectReason =
+        "Force ended by user";
+
+      await call.save();
+
+      /*
+        Also terminate Twilio call if it exists
+      */
+      if (call.providerCallId) {
+
+        try {
+
+          await client.calls(
+            call.providerCallId
+          ).update({
+            status: "completed"
+          });
+
+        } catch (twilioError) {
+
+          console.error(
+            "Twilio force end error:",
+            twilioError.message
+          );
+        }
+      }
+    }
+
+    return res.json({
+      message: "Active call cleared"
+    });
+
+  } catch (error) {
+
+    console.error(
+      "forceEndActiveCall error:",
+      error
+    );
+
+    return res.status(500).json({
+      error: error.message
+    });
+  }
+};

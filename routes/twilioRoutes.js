@@ -10,7 +10,8 @@ const {
   setVerifiedCallerId,
   getCallerIdSettings,
   cleanupMyStaleCalls,
-  getCallStatus
+  getCallStatus,
+  forceEndActiveCall
 } = require("../controllers/twilioController");
 
 // User starts a real Twilio-backed call
@@ -47,6 +48,12 @@ router.post(
   "/cleanup-stale",
   authMiddleware,
   cleanupMyStaleCalls
+);
+
+router.post(
+  "/force-end",
+  authMiddleware,
+  forceEndActiveCall
 );
 
 // Twilio voice webhook
