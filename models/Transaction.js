@@ -6,29 +6,40 @@ const transactionSchema = new mongoose.Schema(
       type: String,
       required: true
     },
+
     type: {
       type: String,
       enum: ["topup", "call_charge"],
       required: true
     },
+
     amount: {
       type: Number,
       required: true
     },
+
     description: {
       type: String,
       default: ""
     },
+
     status: {
       type: String,
       enum: ["pending", "completed", "failed"],
       default: "completed"
     },
+
     paymentProvider: {
       type: String,
-      enum: ["stripe", "system", ""],
+      enum: [
+        "stripe",
+        "system",
+        "twilio",
+        ""
+      ],
       default: ""
     },
+
     paymentReference: {
       type: String,
       default: ""
@@ -39,4 +50,7 @@ const transactionSchema = new mongoose.Schema(
   }
 );
 
-module.exports = mongoose.model("Transaction", transactionSchema);
+module.exports = mongoose.model(
+  "Transaction",
+  transactionSchema
+);
