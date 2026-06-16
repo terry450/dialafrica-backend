@@ -323,6 +323,12 @@ exports.voiceWebhook = async (req, res) => {
 
   try {
 
+    console.log("=================================");
+    console.log("VOICE WEBHOOK HIT");
+    console.log("QUERY:", req.query);
+    console.log("BODY:", req.body);
+    console.log("=================================");
+
     const {
       callId,
       receiverNumber,
@@ -340,6 +346,11 @@ exports.voiceWebhook = async (req, res) => {
       await Call.findById(callId);
 
     if (!call) {
+
+      console.log(
+        "VOICE WEBHOOK ERROR: Call not found",
+        callId
+      );
 
       response.say(
         "Call record not found."
@@ -373,10 +384,28 @@ exports.voiceWebhook = async (req, res) => {
         parsedMaxSeconds;
     }
 
+    console.log(
+      "ATTEMPTING TO DIAL DESTINATION:",
+      receiverNumber
+    );
+
+    console.log(
+      "CALLER ID USED:",
+      dialOptions.callerId
+    );
+
     const dial =
       response.dial(dialOptions);
 
     dial.number(receiverNumber);
+
+    console.log(
+      "TWIML GENERATED:"
+    );
+
+    console.log(
+      response.toString()
+    );
 
     return res
       .type("text/xml")
@@ -409,243 +438,69 @@ exports.statusWebhook = async (req, res) => {
 
   try {
 
-    const { callId } =
-      req.query;
+    const { callId } = req.query;
+
+    console.log("=================================");
+    console.log("TWILIO STATUS WEBHOOK");
+    console.log("CALL ID:", callId);
+    console.log("BODY:", req.body);
+    console.log("=================================");
 
     const {
       CallStatus,
-      CallDuration
+      CallDuration,
+      DialCallStatus,
+      DialCallSid
     } = req.body;
 
-    console.log(
-      "TWILIO STATUS:",
-      CallStatus
-    );
+    console.log("TWILIO STATUS:", CallStatus);
+    console.log("DIAL STATUS:", DialCallStatus);
+    console.log("DIAL SID:", DialCallSid);
 
     if (!callId) {
-
-      return res
-        .status(200)
-        .send("ok");
+      return res.status(200).send("ok");
     }
 
-    const call =
-      await Call.findById(callId);
+    const call = await Call.findById(callId);
 
     if (!call) {
-
-      return res
-        .status(200)
-        .send("ok");
+      console.log("CALL NOT FOUND:", callId);
+      return res.status(200).send("ok");
     }
-
-    if (CallStatus === "ringing") {
-
-      call.status = "ringing";
-
-      await call.save();
-
-      return res
-        .status(200)
-        .send("ok");
-    }
-
-    /*
-      IMPORTANT FIX
-      Twilio sends "answered"
-      before bridge fully active
-    */
 
     if (
       CallStatus === "answered" ||
       CallStatus === "in-progress"
     ) {
 
-      call.status =
-        "connected";
-
       if (!call.answerTime) {
-
-        call.answerTime =
-          new Date();
+        call.answerTime = new Date();
       }
 
-      await call.save();
+      call.status = "connected";
 
-      return res
-        .status(200)
-        .send("ok");
+      await call.save();
     }
 
     if (
       [
         "completed",
         "busy",
-        "no-answer",
         "failed",
+        "no-answer",
         "canceled"
       ].includes(CallStatus)
     ) {
 
-      call.endTime =
-        new Date();
-
-      const wallet =
-        await Wallet.findOne({
-          userId:
-            call.userId
-        });
-
-      /*
-        Never connected
-      */
-
-      if (!call.answerTime) {
-
-        call.status =
-          "failed";
-
-        call.billingStatus =
-          "failed";
-
-        call.durationSeconds = 0;
-
-        call.durationMinutesRounded = 0;
-
-        call.cost = 0;
-
-        call.disconnectReason =
-          `Twilio status: ${CallStatus}`;
-
-        await call.save();
-
-        return res
-          .status(200)
-          .send("ok");
-      }
-
-      if (!wallet) {
-
-        call.status =
-          "failed";
-
-        call.billingStatus =
-          "failed";
-
-        call.disconnectReason =
-          "Wallet not found";
-
-        await call.save();
-
-        return res
-          .status(200)
-          .send("ok");
-      }
-
-      const durationSeconds =
-        Math.max(
-          0,
-          Number(
-            CallDuration || 0
-          )
-        );
-
-      const durationMinutesRounded =
-        Math.ceil(
-          durationSeconds / 60
-        );
-
-      const cost =
-        durationMinutesRounded *
-        call.ratePerMinute;
+      call.endTime = new Date();
 
       call.durationSeconds =
-        durationSeconds;
-
-      call.durationMinutesRounded =
-        durationMinutesRounded;
-
-      call.cost = cost;
-
-      if (
-        CallStatus ===
-        "completed"
-      ) {
-
-        if (
-          wallet.balance < cost
-        ) {
-
-          call.status =
-            "failed";
-
-          call.billingStatus =
-            "failed";
-
-          call.disconnectReason =
-            "Insufficient balance";
-
-          await call.save();
-
-          return res
-            .status(200)
-            .send("ok");
-        }
-
-        wallet.balance -= cost;
-
-        await wallet.save();
-
-        call.status =
-          "completed";
-
-        call.billingStatus =
-          "billed";
-
-        call.disconnectReason =
-          "Call ended normally";
-
-        await Transaction.create({
-
-          userId:
-            call.userId,
-
-          type:
-            "call_charge",
-
-          amount: cost,
-
-          description:
-            `Twilio call charge to ${call.receiverNumber}`,
-
-          status:
-            "completed",
-
-          paymentProvider:
-            "twilio",
-
-          paymentReference:
-            call.providerCallId
-        });
-
-      } else {
-
-        call.status =
-          "failed";
-
-        call.billingStatus =
-          "failed";
-
-        call.disconnectReason =
-          `Twilio status: ${CallStatus}`;
-      }
+        Number(CallDuration || 0);
 
       await call.save();
     }
 
-    return res
-      .status(200)
-      .send("ok");
+    return res.status(200).send("ok");
 
   } catch (error) {
 
@@ -654,12 +509,9 @@ exports.statusWebhook = async (req, res) => {
       error
     );
 
-    return res
-      .status(200)
-      .send("ok");
+    return res.status(200).send("ok");
   }
 };
-
 /*
   REAL-TIME POLLING ENDPOINT
 */
