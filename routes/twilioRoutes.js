@@ -7,6 +7,7 @@ const {
   startTwilioCall,
   voiceWebhook,
   statusWebhook,
+  dialStatusWebhook,
   setVerifiedCallerId,
   getCallerIdSettings,
   cleanupMyStaleCalls,
@@ -20,6 +21,11 @@ router.post(
   express.json(),
   authMiddleware,
   startTwilioCall
+);
+
+router.post(
+  "/dial-status",
+  dialStatusWebhook
 );
 
 // Real-time polling endpoint

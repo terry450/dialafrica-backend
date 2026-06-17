@@ -395,9 +395,16 @@ exports.voiceWebhook = async (req, res) => {
     );
 
     const dial =
-      response.dial(dialOptions);
+  response.dial({
+    ...dialOptions,
 
-    dial.number(receiverNumber);
+    action:
+      "https://dialafrica-backend.onrender.com/api/twilio/dial-status",
+
+    method: "POST"
+  });
+
+dial.number(receiverNumber);
 
     console.log(
       "TWIML GENERATED:"
@@ -888,4 +895,27 @@ exports.forceEndActiveCall = async (req, res) => {
       error: error.message
     });
   }
+};
+exports.dialStatusWebhook = async (req, res) => {
+
+  try {
+
+    console.log("==============");
+    console.log("DIAL STATUS WEBHOOK");
+    console.log(req.body);
+    console.log("==============");
+
+    return res.status(200).send("ok");
+
+  } catch (error) {
+
+    console.error(
+      "dialStatusWebhook error:",
+      error
+    );
+
+    return res.status(200).send("ok");
+
+  }
+
 };
