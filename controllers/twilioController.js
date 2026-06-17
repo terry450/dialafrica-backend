@@ -483,23 +483,83 @@ exports.statusWebhook = async (req, res) => {
     }
 
     if (
-      [
-        "completed",
-        "busy",
-        "failed",
-        "no-answer",
-        "canceled"
-      ].includes(CallStatus)
-    ) {
+  [
+    "completed",
+    "busy",
+    "failed",
+    "no-answer",
+    "canceled"
+  ].includes(CallStatus)
+) {
 
-      call.endTime = new Date();
+  call.endTime = new Date();
 
-      call.durationSeconds =
-        Number(CallDuration || 0);
+  call.durationSeconds =
+    Number(CallDuration || 0);
 
-      await call.save();
+  const roundedMinutes =
+    Math.ceil(
+      call.durationSeconds / 60
+    );
+
+  call.durationMinutesRounded =
+    roundedMinutes;
+
+  const totalCost =
+    roundedMinutes *
+    call.ratePerMinute;
+
+  call.cost = totalCost;
+
+  if (
+    call.durationSeconds > 0
+  ) {
+
+    const wallet =
+      await Wallet.findOne({
+        userId: call.userId
+      });
+
+    if (wallet) {
+
+      wallet.balance =
+        Math.max(
+          0,
+          wallet.balance - totalCost
+        );
+
+      await wallet.save();
+
+      await Transaction.create({
+
+        userId: call.userId,
+
+        type: "call_charge",
+
+        amount: totalCost,
+
+        description:
+          `Call to ${call.receiverNumber}`,
+
+        paymentProvider:
+          "twilio",
+
+        paymentReference:
+          call.providerCallId
+      });
+
+      call.billingStatus =
+        "billed";
     }
+  }
 
+  call.status =
+    CallStatus === "completed"
+      ? "completed"
+      : "failed";
+
+  await call.save();
+}
     return res.status(200).send("ok");
 
   } catch (error) {
