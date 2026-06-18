@@ -405,6 +405,7 @@ exports.voiceWebhook = async (req, res) => {
   });
 
 dial.number(
+  receiverNumber,
   {
     statusCallback:
       `https://dialafrica-backend.onrender.com/api/twilio/dial-status?callId=${call._id}`,
@@ -416,9 +417,7 @@ dial.number(
       "answered",
       "completed"
     ]
-  },
-
-  receiverNumber
+  }
 );
 
     console.log(
