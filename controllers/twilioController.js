@@ -404,7 +404,22 @@ exports.voiceWebhook = async (req, res) => {
     method: "POST"
   });
 
-dial.number(receiverNumber);
+dial.number(
+  {
+    statusCallback:
+      `https://dialafrica-backend.onrender.com/api/twilio/dial-status?callId=${call._id}`,
+
+    statusCallbackMethod: "POST",
+
+    statusCallbackEvent: [
+      "initiated",
+      "answered",
+      "completed"
+    ]
+  },
+
+  receiverNumber
+);
 
     console.log(
       "TWIML GENERATED:"
@@ -904,6 +919,34 @@ exports.dialStatusWebhook = async (req, res) => {
     console.log("DIAL STATUS WEBHOOK");
     console.log(req.body);
     console.log("==============");
+
+    const { callId } = req.query;
+
+    if (!callId) {
+      return res.status(200).send("ok");
+    }
+
+    const call = await Call.findById(callId);
+
+    if (!call) {
+      return res.status(200).send("ok");
+    }
+
+    const dialStatus = req.body.DialCallStatus;
+
+    console.log("DialCallStatus:", dialStatus);
+
+    if (
+      ["busy", "failed", "no-answer", "canceled"].includes(dialStatus)
+    ) {
+
+      call.status = "failed";
+      call.billingStatus = "failed";
+      call.endTime = new Date();
+      call.disconnectReason = dialStatus;
+
+      await call.save();
+    }
 
     return res.status(200).send("ok");
 
