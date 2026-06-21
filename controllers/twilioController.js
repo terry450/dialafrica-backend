@@ -394,18 +394,11 @@ exports.voiceWebhook = async (req, res) => {
       dialOptions.callerId
     );
 
-    const dial =
-  response.dial({
-    ...dialOptions,
-
-    action:
-      "https://dialafrica-backend.onrender.com/api/twilio/dial-status",
-
-    method: "POST"
-  });
+    const dial = response.dial({
+  ...dialOptions
+});
 
 dial.number(
-  receiverNumber,
   {
     statusCallback:
       `https://dialafrica-backend.onrender.com/api/twilio/dial-status?callId=${call._id}`,
@@ -414,12 +407,13 @@ dial.number(
 
     statusCallbackEvent: [
       "initiated",
+      "ringing",
       "answered",
       "completed"
     ]
-  }
+  },
+  receiverNumber
 );
-
     console.log(
       "TWIML GENERATED:"
     );
@@ -490,7 +484,7 @@ exports.statusWebhook = async (req, res) => {
     }
 
     if (
-      CallStatus === "answered" ||
+      
       CallStatus === "in-progress"
     ) {
 
@@ -532,52 +526,57 @@ exports.statusWebhook = async (req, res) => {
 
   call.cost = totalCost;
 
-  if (
-    call.durationSeconds > 0
-  ) {
+  if (call.durationSeconds > 0) {
 
-    const wallet =
-      await Wallet.findOne({
-        userId: call.userId
-      });
+  if (call.billingStatus === "billed") {
 
-    if (wallet) {
+    console.log(
+      "[DUPLICATE CALLBACK IGNORED]"
+    );
 
-      wallet.balance =
-        Math.max(
-          0,
-          wallet.balance - totalCost
-        );
-
-      await wallet.save();
-
-      await Transaction.create({
-
-        userId: call.userId,
-
-        type: "call_charge",
-
-        amount: totalCost,
-
-        description:
-          `Call to ${call.receiverNumber}`,
-
-        paymentProvider:
-          "twilio",
-
-        paymentReference:
-          call.providerCallId
-      });
-
-      call.billingStatus =
-        "billed";
-    }
+    return res.status(200).send("ok");
   }
 
+  const wallet = await Wallet.findOne({
+    userId: call.userId
+  });
+
+  if (wallet) {
+
+    wallet.balance = Math.max(
+      0,
+      wallet.balance - totalCost
+    );
+
+    await wallet.save();
+
+    await Transaction.create({
+
+      userId: call.userId,
+
+      type: "call_charge",
+
+      amount: totalCost,
+
+      description:
+        `Call to ${call.receiverNumber}`,
+
+      paymentProvider: "twilio",
+
+      paymentReference:
+        call.providerCallId
+    });
+
+    call.billingStatus = "billed";
+  }
+}
   call.status =
-    CallStatus === "completed"
-      ? "completed"
-      : "failed";
+CallStatus === "completed"
+  ? "completed"
+  : "failed";
+
+call.disconnectReason =
+  CallStatus;
 
   await call.save();
 }
