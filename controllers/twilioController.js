@@ -239,36 +239,38 @@ exports.startTwilioCall = async (req, res) => {
     });
 
     await call.save();
+    console.log("=================================");
+console.log("VOICE URL SENT TO TWILIO:");
 
-    const twilioCall =
-      await client.calls.create({
+const voiceUrl =
+  `https://dialafrica-backend.onrender.com/api/twilio/voice?callId=${call._id}&receiverNumber=${encodeURIComponent(receiverNumber)}&outgoingCallerId=${encodeURIComponent(outgoingCallerId)}&maxSeconds=${maxSeconds}`;
 
-        to: callerNumber,
+console.log(voiceUrl);
+console.log("=================================");
 
-        from:
-          process.env.TWILIO_PHONE_NUMBER,
+   const twilioCall =
+  await client.calls.create({
 
-        url:
-          `https://dialafrica-backend.onrender.com/api/twilio/voice?callId=${call._id}&receiverNumber=${encodeURIComponent(
-            receiverNumber
-          )}&outgoingCallerId=${encodeURIComponent(
-            outgoingCallerId
-          )}&maxSeconds=${maxSeconds}`,
+    to: callerNumber,
 
-        method: "POST",
+    from: process.env.TWILIO_PHONE_NUMBER,
 
-        statusCallback:
-          `https://dialafrica-backend.onrender.com/api/twilio/status?callId=${call._id}`,
+    url: voiceUrl,
 
-        statusCallbackMethod: "POST",
+    method: "POST",
 
-        statusCallbackEvent: [
-          "initiated",
-          "ringing",
-          "answered",
-          "completed"
-        ]
-      });
+    statusCallback:
+      `https://dialafrica-backend.onrender.com/api/twilio/status?callId=${call._id}`,
+
+    statusCallbackMethod: "POST",
+
+    statusCallbackEvent: [
+      "initiated",
+      "ringing",
+      "answered",
+      "completed"
+    ]
+  });
 
     call.providerCallId =
       twilioCall.sid;
