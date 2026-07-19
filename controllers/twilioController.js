@@ -213,6 +213,12 @@ exports.startTwilioCall = async (req, res) => {
 
     const outgoingCallerId =
       getOutgoingCallerId(user);
+      console.log("========== CALLER ID DEBUG ==========");
+console.log("TWILIO_PHONE_NUMBER:", process.env.TWILIO_PHONE_NUMBER);
+console.log("callerIdMode:", user.callerIdMode);
+console.log("verifiedCallerId:", user.verifiedCallerId);
+console.log("Outgoing Caller ID:", outgoingCallerId);
+console.log("====================================");
 
     const call = new Call({
 
@@ -247,6 +253,13 @@ const voiceUrl =
 
 console.log(voiceUrl);
 console.log("=================================");
+   console.log("====================================");
+console.log("STARTING TWILIO CALL");
+console.log("Twilio From:", process.env.TWILIO_PHONE_NUMBER);
+console.log("Calling User:", callerNumber);
+console.log("Receiver:", receiverNumber);
+console.log("Outgoing Caller ID:", outgoingCallerId);
+console.log("====================================");
 
    const twilioCall =
   await client.calls.create({
@@ -357,7 +370,9 @@ exports.voiceWebhook = async (req, res) => {
       response.say(
         "Call record not found."
       );
-
+      console.log("Generated TwiML:");
+      console.log(response.toString());
+      
       return res
         .type("text/xml")
         .send(response.toString());
