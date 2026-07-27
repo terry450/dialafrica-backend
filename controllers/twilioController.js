@@ -411,7 +411,7 @@ exports.dialStatusWebhook = async (req, res) => {
     const call = await Call.findById(callId);
     if (!call) return res.status(200).send("ok");
 
-    const dialStatus = req.body.DialCallStatus;
+    const dialStatus = req.body.CallStatus;
     console.log("DialCallStatus:", dialStatus);
 
     // ✅ NEW: Save the dial status so the polling endpoint can see it
