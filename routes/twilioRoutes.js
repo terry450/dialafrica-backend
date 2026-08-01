@@ -12,7 +12,8 @@ const {
   getCallerIdSettings,
   cleanupMyStaleCalls,
   getCallStatus,
-  forceEndActiveCall
+  forceEndActiveCall,
+  toggleMute          // ✅ ADD THIS
 } = require("../controllers/twilioController");
 
 // User starts a real Twilio-backed call
@@ -60,6 +61,14 @@ router.post(
   "/force-end",
   authMiddleware,
   forceEndActiveCall
+);
+
+// ✅ NEW: Mute / unmute a live call
+router.post(
+  "/mute",
+  express.json(),
+  authMiddleware,
+  toggleMute
 );
 
 // Twilio voice webhook

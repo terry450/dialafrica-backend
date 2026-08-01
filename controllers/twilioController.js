@@ -300,7 +300,7 @@ exports.getCallStatus = async (req, res) => {
       answerTime: call.answerTime || null,
       startTime: call.startTime || null,
       endTime: call.endTime || null,
-      dialStatus: call.dialStatus || null       // ✅ NEW
+      dialStatus: call.dialStatus || null
     });
   } catch (error) {
     console.error("getCallStatus error:", error);
@@ -398,6 +398,30 @@ exports.forceEndActiveCall = async (req, res) => {
   }
 };
 
+// ✅ NEW: Toggle mute/unmute on a live Twilio call
+exports.toggleMute = async (req, res) => {
+  try {
+    const { callId, mute } = req.body;   // mute: true = mute, false = unmute
+
+    const call = await Call.findById(callId);
+    if (!call || !call.providerCallId) {
+      return res.status(404).json({ message: "Call not found" });
+    }
+
+    // Update the live Twilio call to mute/unmute using <Mute> / <Unmute> TwiML
+    await client.calls(call.providerCallId).update({
+      twiml: mute
+        ? `<Response><Mute/></Response>`
+        : `<Response><Unmute/></Response>`
+    });
+
+    return res.json({ message: mute ? "Muted" : "Unmuted" });
+  } catch (error) {
+    console.error("toggleMute error:", error);
+    return res.status(500).json({ error: error.message });
+  }
+};
+
 exports.dialStatusWebhook = async (req, res) => {
   try {
     console.log("==============");
@@ -414,7 +438,6 @@ exports.dialStatusWebhook = async (req, res) => {
     const dialStatus = req.body.CallStatus;
     console.log("DialCallStatus:", dialStatus);
 
-    // ✅ NEW: Save the dial status so the polling endpoint can see it
     if (dialStatus) {
       call.dialStatus = dialStatus;
       await call.save();
