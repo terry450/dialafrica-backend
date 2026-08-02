@@ -1,5 +1,4 @@
 const mongoose = require("mongoose");
-
 const userSchema = new mongoose.Schema(
   {
     email: {
@@ -17,6 +16,26 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
+
+    // ✅ NEW: Phone verification fields
+    phoneNumber: {
+      type: String,
+      default: ""
+    },
+    verificationCode: {
+      type: String,
+      default: ""
+    },
+    codeExpiry: {
+      type: Date,
+      default: null
+    },
+    phoneVerified: {
+      type: Boolean,
+      default: false
+    },
+
+    // Existing caller ID fields
     verifiedCallerId: {
       type: String,
       default: ""
