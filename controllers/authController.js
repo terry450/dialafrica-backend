@@ -13,6 +13,12 @@ function generateCode() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+// TwiML that speaks the code three times
+function makeVerificationTwiML(code) {
+  const spokenCode = code.split("").join(" ");
+  return `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Your DialAfrica verification code is</Say><Say>${spokenCode}</Say><Say>I repeat, your code is</Say><Say>${spokenCode}</Say><Say>Once more, your code is</Say><Say>${spokenCode}</Say></Response>`;
+}
+
 exports.register = async (req, res) => {
   try {
     const { email, password, phoneNumber } = req.body;
@@ -23,7 +29,6 @@ exports.register = async (req, res) => {
       });
     }
 
-    // Optional: phone number can be added later, but if provided we must validate
     if (phoneNumber && !/^\+[1-9]\d{7,14}$/.test(phoneNumber.trim())) {
       return res.status(400).json({
         message: "phoneNumber must be in international format like +447123456789"
@@ -38,8 +43,6 @@ exports.register = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-
-    // If a phone number was provided, generate a verification code and send it
     const code = phoneNumber ? generateCode() : undefined;
 
     const user = new User({
@@ -48,23 +51,22 @@ exports.register = async (req, res) => {
       isAdmin: false,
       phoneNumber: phoneNumber || "",
       verificationCode: code || "",
-      codeExpiry: code ? new Date(Date.now() + 10 * 60 * 1000) : null   // 10 minutes
+      codeExpiry: code ? new Date(Date.now() + 10 * 60 * 1000) : null
     });
 
     await user.save();
 
-    // Send SMS with the code
+    // ✅ VOICE CALL verification
     if (phoneNumber && code) {
       try {
-        await client.messages.create({
-          body: `Your DialAfrica verification code is: ${code}`,
-          from: process.env.TWILIO_PHONE_NUMBER,
-          to: phoneNumber
+        await client.calls.create({
+          twiml: makeVerificationTwiML(code),
+          to: phoneNumber,
+          from: process.env.TWILIO_PHONE_NUMBER
         });
-        console.log(`Verification SMS sent to ${phoneNumber}`);
-      } catch (smsError) {
-        console.error("Failed to send verification SMS:", smsError);
-        // Don't fail the registration – the user can request a new code later
+        console.log(`Verification call initiated to ${phoneNumber}`);
+      } catch (callError) {
+        console.error("Failed to initiate verification call:", callError);
       }
     }
 
@@ -81,14 +83,13 @@ exports.register = async (req, res) => {
       isAdmin: user.isAdmin,
       phoneNumber: user.phoneNumber || null,
       phoneVerified: user.phoneVerified,
-      requiresVerification: !!phoneNumber    // true if phone was provided
+      requiresVerification: !!phoneNumber
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
 
-// ✅ NEW: Verify the code sent to the user's phone
 exports.verifyCode = async (req, res) => {
   try {
     const { userId, code } = req.body;
@@ -114,9 +115,8 @@ exports.verifyCode = async (req, res) => {
       return res.status(400).json({ message: "Invalid code" });
     }
 
-    // Mark as verified and set caller ID
     user.phoneVerified = true;
-    user.verifiedCallerId = user.phoneNumber;       // use their own number
+    user.verifiedCallerId = user.phoneNumber;
     user.callerIdMode = "user_verified";
     user.verificationCode = "";
     user.codeExpiry = null;
@@ -132,7 +132,8 @@ exports.verifyCode = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
- exports.resendCode = async (req, res) => {
+
+exports.resendCode = async (req, res) => {
   try {
     const { userId } = req.body;
 
@@ -153,40 +154,36 @@ exports.verifyCode = async (req, res) => {
       return res.status(400).json({ message: "No phone number on file" });
     }
 
-    // Generate new code and expiry
     const code = generateCode();
     user.verificationCode = code;
-    user.codeExpiry = new Date(Date.now() + 10 * 60 * 1000);  // 10 minutes
+    user.codeExpiry = new Date(Date.now() + 10 * 60 * 1000);
     await user.save();
 
-    // Send SMS
+    // Voice call with the new code
     try {
-      await client.messages.create({
-        body: `Your DialAfrica verification code is: ${code}`,
-        from: process.env.TWILIO_PHONE_NUMBER,
-        to: user.phoneNumber
+      await client.calls.create({
+        twiml: makeVerificationTwiML(code),
+        to: user.phoneNumber,
+        from: process.env.TWILIO_PHONE_NUMBER
       });
-      console.log(`Resent verification SMS to ${user.phoneNumber}`);
-    } catch (smsError) {
-      console.error("Failed to resend SMS:", smsError);
-      return res.status(500).json({ message: "Failed to send SMS. Please try again." });
+      console.log(`Resent verification call to ${user.phoneNumber}`);
+    } catch (callError) {
+      console.error("Failed to resend verification call:", callError);
+      return res.status(500).json({ message: "Failed to initiate call. Please try again." });
     }
 
-    res.json({ message: "New code sent" });
+    res.json({ message: "New code sent (voice call)" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
 
 exports.login = async (req, res) => {
-  // unchanged – same as your original
   try {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({
-        message: "Email and password are required"
-      });
+      return res.status(400).json({ message: "Email and password are required" });
     }
 
     const user = await User.findOne({ email });
