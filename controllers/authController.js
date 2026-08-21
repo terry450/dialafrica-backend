@@ -15,8 +15,21 @@ function generateCode() {
 
 // TwiML that speaks the code three times
 function makeVerificationTwiML(code) {
-  const spokenCode = code.split("").join(" ");
-  return `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Your DialAfrica verification code is</Say><Say>${spokenCode}</Say><Say>I repeat, your code is</Say><Say>${spokenCode}</Say><Say>Once more, your code is</Say><Say>${spokenCode}</Say></Response>`;
+  const digits = code.split("");
+  const spokenCode = digits.join(", ");   // commas create short pauses between digits
+  return `<?xml version="1.0" encoding="UTF-8"?><Response>
+    <Say voice="woman" language="en-GB">Your DialAfrica verification code is</Say>
+    <Pause length="1"/>
+    <Say voice="woman" language="en-GB">${spokenCode}</Say>
+    <Pause length="2"/>
+    <Say voice="woman" language="en-GB">I repeat, your code is</Say>
+    <Pause length="1"/>
+    <Say voice="woman" language="en-GB">${spokenCode}</Say>
+    <Pause length="2"/>
+    <Say voice="woman" language="en-GB">Once more, your code is</Say>
+    <Pause length="1"/>
+    <Say voice="woman" language="en-GB">${spokenCode}</Say>
+  </Response>`;
 }
 
 exports.register = async (req, res) => {
