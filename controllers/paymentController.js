@@ -30,7 +30,7 @@ exports.createCheckoutSession = async (req, res) => {
     }
 
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card", "link"],
+      payment_method_types: ["card", "link", "google_pay", "apple_pay"], // ✅ added Google Pay & Apple Pay
       mode: "payment",
       line_items: [
         {
