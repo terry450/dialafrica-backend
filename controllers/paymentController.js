@@ -30,7 +30,7 @@ exports.createCheckoutSession = async (req, res) => {
     }
 
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card", "link"], // ✅ original working types
+      payment_method_types: ["card", "link", "paypal"], // ✅ original working types
       mode: "payment",
       line_items: [
         {
