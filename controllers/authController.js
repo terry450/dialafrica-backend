@@ -13,25 +13,6 @@ function generateCode() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-// TwiML that speaks the code three times
-function makeVerificationTwiML(code) {
-  const digits = code.split("");
-  const spokenCode = digits.join(", ");   // commas create short pauses between digits
-  return `<?xml version="1.0" encoding="UTF-8"?><Response>
-    <Say voice="woman" language="en-GB">Your DialAfrica verification code is</Say>
-    <Pause length="1"/>
-    <Say voice="woman" language="en-GB">${spokenCode}</Say>
-    <Pause length="2"/>
-    <Say voice="woman" language="en-GB">I repeat, your code is</Say>
-    <Pause length="1"/>
-    <Say voice="woman" language="en-GB">${spokenCode}</Say>
-    <Pause length="2"/>
-    <Say voice="woman" language="en-GB">Once more, your code is</Say>
-    <Pause length="1"/>
-    <Say voice="woman" language="en-GB">${spokenCode}</Say>
-  </Response>`;
-}
-
 exports.register = async (req, res) => {
   try {
     const { email, password, phoneNumber } = req.body;
@@ -69,17 +50,17 @@ exports.register = async (req, res) => {
 
     await user.save();
 
-    // ✅ VOICE CALL verification
+    // ✅ SMS VERIFICATION
     if (phoneNumber && code) {
       try {
-        await client.calls.create({
-          twiml: makeVerificationTwiML(code),
+        await client.messages.create({
+          body: `Your DialAfrica verification code is: ${code}`,
           to: phoneNumber,
           from: process.env.TWILIO_PHONE_NUMBER
         });
-        console.log(`Verification call initiated to ${phoneNumber}`);
-      } catch (callError) {
-        console.error("Failed to initiate verification call:", callError);
+        console.log(`Verification SMS sent to ${phoneNumber}`);
+      } catch (smsError) {
+        console.error("Failed to send verification SMS:", smsError);
       }
     }
 
@@ -172,20 +153,20 @@ exports.resendCode = async (req, res) => {
     user.codeExpiry = new Date(Date.now() + 10 * 60 * 1000);
     await user.save();
 
-    // Voice call with the new code
+    // ✅ SMS RESEND
     try {
-      await client.calls.create({
-        twiml: makeVerificationTwiML(code),
+      await client.messages.create({
+        body: `Your DialAfrica verification code is: ${code}`,
         to: user.phoneNumber,
         from: process.env.TWILIO_PHONE_NUMBER
       });
-      console.log(`Resent verification call to ${user.phoneNumber}`);
-    } catch (callError) {
-      console.error("Failed to resend verification call:", callError);
-      return res.status(500).json({ message: "Failed to initiate call. Please try again." });
+      console.log(`Resent verification SMS to ${user.phoneNumber}`);
+    } catch (smsError) {
+      console.error("Failed to resend verification SMS:", smsError);
+      return res.status(500).json({ message: "Failed to send SMS. Please try again." });
     }
 
-    res.json({ message: "New code sent (voice call)" });
+    res.json({ message: "New code sent via SMS" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
