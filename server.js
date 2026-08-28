@@ -17,83 +17,20 @@ const twilioRoutes = require("./routes/twilioRoutes");
 const app = express();
 app.set("trust proxy", 1);
 
-if (!process.env.MONGO_URI) {
-  throw new Error("MONGO_URI is required");
-}
-
-if (!process.env.JWT_SECRET) {
-  throw new Error("JWT_SECRET is required");
-}
-
-if (!process.env.STRIPE_SECRET_KEY) {
-  throw new Error("STRIPE_SECRET_KEY is required");
-}
-
-if (!process.env.STRIPE_WEBHOOK_SECRET) {
-  throw new Error("STRIPE_WEBHOOK_SECRET is required");
-}
-
-if (!process.env.TWILIO_ACCOUNT_SID) {
-  throw new Error("TWILIO_ACCOUNT_SID is required");
-}
-
-if (!process.env.TWILIO_AUTH_TOKEN) {
-  throw new Error("TWILIO_AUTH_TOKEN is required");
-}
-
-if (!process.env.TWILIO_PHONE_NUMBER) {
-  throw new Error("TWILIO_PHONE_NUMBER is required");
-}
+// Environment variable checks (same as before)
+if (!process.env.MONGO_URI) throw new Error("MONGO_URI is required");
+if (!process.env.JWT_SECRET) throw new Error("JWT_SECRET is required");
+if (!process.env.STRIPE_SECRET_KEY) throw new Error("STRIPE_SECRET_KEY is required");
+if (!process.env.STRIPE_WEBHOOK_SECRET) throw new Error("STRIPE_WEBHOOK_SECRET is required");
+if (!process.env.TWILIO_ACCOUNT_SID) throw new Error("TWILIO_ACCOUNT_SID is required");
+if (!process.env.TWILIO_AUTH_TOKEN) throw new Error("TWILIO_AUTH_TOKEN is required");
+if (!process.env.TWILIO_PHONE_NUMBER) throw new Error("TWILIO_PHONE_NUMBER is required");
 
 app.use(cors());
 
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    message: "Too many requests. Please try again later."
-  }
-});
-
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    message: "Too many login attempts. Try again later."
-  }
-});
-
-app.use(globalLimiter);
-
-/*
-  Stripe webhook routes first
-  Twilio webhooks also need raw/form-safe handling before JSON-heavy routes
-*/
-app.use("/api/payments", paymentRoutes);
-
-/*
-  Twilio sends application/x-www-form-urlencoded to webhooks
-*/
-app.use("/api/twilio", express.urlencoded({ extended: true }), twilioRoutes);
-
-/*
-  JSON parser for normal routes
-*/
-app.use(express.json());
-
-app.use("/api/auth", authLimiter, authRoutes);
-app.use("/api/calls", callRoutes);
-app.use("/api/wallet", walletRoutes);
-app.use("/api/contacts", contactRoutes);
-app.use("/api/admin", adminRoutes);
-app.use("/api/routes", routeRoutes);
-
+// Health check routes (before rate limiter to ensure they're always accessible)
 app.get("/", (req, res) => {
-  res.send("DialAfrica API is running");
+  res.status(200).send("DialAfrica API is running");
 });
 
 app.get("/health", (req, res) => {
@@ -101,10 +38,15 @@ app.get("/health", (req, res) => {
     status: "ok",
     service: "DialAfrica API",
     uptimeSeconds: Math.floor(process.uptime()),
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   });
 });
 
+app.get("/healthz", (req, res) => {
+  res.status(200).send("OK");
+});
+
+// Payment success/cancel pages (before JSON parser to avoid issues)
 app.get("/payment-success", (req, res) => {
   res.send("Payment successful");
 });
@@ -113,11 +55,51 @@ app.get("/payment-cancel", (req, res) => {
   res.send("Payment cancelled");
 });
 
+// Rate limiters
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many requests. Please try again later." },
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many login attempts. Try again later." },
+});
+
+app.use(globalLimiter);
+
+// Stripe webhook routes first (raw body)
+app.use("/api/payments", paymentRoutes);
+
+// Twilio webhooks (urlencoded)
+app.use("/api/twilio", express.urlencoded({ extended: true }), twilioRoutes);
+
+// JSON parser for normal routes
+app.use(express.json());
+
+// API routes
+app.use("/api/auth", authLimiter, authRoutes);
+app.use("/api/calls", callRoutes);
+app.use("/api/wallet", walletRoutes);
+app.use("/api/contacts", contactRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/routes", routeRoutes);
+
+// 404 handler
+app.use((req, res, next) => {
+  res.status(404).json({ message: "Route not found" });
+});
+
+// Error handler
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
-  res.status(500).json({
-    message: "Internal server error"
-  });
+  res.status(500).json({ message: "Internal server error" });
 });
 
 const PORT = process.env.PORT || 5000;
