@@ -12,10 +12,9 @@ const client = twilio(
 function generateCode() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
-
 exports.register = async (req, res) => {
   try {
-    const { email, password, phoneNumber } = req.body;
+    const { email, password, phoneNumber, firstName, lastName } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({
@@ -42,6 +41,8 @@ exports.register = async (req, res) => {
     const user = new User({
       email,
       password: hashedPassword,
+      firstName,                // ✅ added
+      lastName,                 // ✅ added
       isAdmin: false,
       phoneNumber: phoneNumber || "",
       verificationCode: code || "",
