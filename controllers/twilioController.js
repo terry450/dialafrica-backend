@@ -206,6 +206,7 @@ exports.voiceWebhook = async (req, res) => {
   }
 };
 
+// Main leg status (your phone) – only closes if the dial leg never connected
 exports.statusWebhook = async (req, res) => {
   try {
     const { callId } = req.query;
@@ -228,49 +229,40 @@ exports.statusWebhook = async (req, res) => {
       return res.status(200).send("ok");
     }
 
-    if (CallStatus === "in-progress") {
-      if (!call.answerTime) {
-        call.answerTime = new Date();
+    // Do NOT set connected or answerTime here – that's handled by dialStatusWebhook
+    // when the destination answers.
+
+    // If the main leg ends without the dial leg ever connecting,
+    // mark as failed/no-answer if the call is not already completed/connected.
+    if (["busy", "failed", "no-answer", "canceled"].includes(CallStatus)) {
+      if (call.status !== "completed" && call.status !== "connected") {
+        call.status = "failed";
+        call.billingStatus = "failed";
+        call.endTime = new Date();
+        call.durationSeconds = 0;
+        call.durationMinutesRounded = 0;
+        call.cost = 0;
+        call.disconnectReason = CallStatus;
+        await call.save();
       }
-      call.status = "connected";
-      await call.save();
     }
 
-    if (["completed", "busy", "failed", "no-answer", "canceled"].includes(CallStatus)) {
-      call.endTime = new Date();
-      call.durationSeconds = Number(CallDuration || 0);
-      const roundedMinutes = Math.ceil(call.durationSeconds / 60);
-      call.durationMinutesRounded = roundedMinutes;
-      const totalCost = roundedMinutes * call.ratePerMinute;
-      call.cost = totalCost;
-
-      if (call.durationSeconds > 0) {
-        if (call.billingStatus === "billed") {
-          console.log("[DUPLICATE CALLBACK IGNORED]");
-          return res.status(200).send("ok");
-        }
-
-        const wallet = await Wallet.findOne({ userId: call.userId });
-        if (wallet) {
-          wallet.balance = Math.max(0, wallet.balance - totalCost);
-          await wallet.save();
-
-          await Transaction.create({
-            userId: call.userId,
-            type: "call_charge",
-            amount: totalCost,
-            description: `Call to ${call.receiverNumber}`,
-            paymentProvider: "twilio",
-            paymentReference: call.providerCallId
-          });
-
-          call.billingStatus = "billed";
-        }
+    // If main leg completes normally but dial leg may have already been handled.
+    // We do nothing here because dialStatusWebhook will handle completion/billing.
+    // However, if for some reason the dial leg never connected and main leg ends,
+    // we should mark as failed.
+    if (CallStatus === "completed" && call.status !== "completed") {
+      // If call is still initiated/ringing, that means destination never answered.
+      if (["initiated", "ringing"].includes(call.status)) {
+        call.status = "failed";
+        call.billingStatus = "failed";
+        call.endTime = new Date();
+        call.durationSeconds = 0;
+        call.durationMinutesRounded = 0;
+        call.cost = 0;
+        call.disconnectReason = "Destination never answered";
+        await call.save();
       }
-
-      call.status = CallStatus === "completed" ? "completed" : "failed";
-      call.disconnectReason = CallStatus;
-      await call.save();
     }
 
     return res.status(200).send("ok");
@@ -398,17 +390,15 @@ exports.forceEndActiveCall = async (req, res) => {
   }
 };
 
-// ✅ NEW: Toggle mute/unmute on a live Twilio call
 exports.toggleMute = async (req, res) => {
   try {
-    const { callId, mute } = req.body;   // mute: true = mute, false = unmute
+    const { callId, mute } = req.body;
 
     const call = await Call.findById(callId);
     if (!call || !call.providerCallId) {
       return res.status(404).json({ message: "Call not found" });
     }
 
-    // Update the live Twilio call to mute/unmute using <Mute> / <Unmute> TwiML
     await client.calls(call.providerCallId).update({
       twiml: mute
         ? `<Response><Mute/></Response>`
@@ -436,17 +426,66 @@ exports.dialStatusWebhook = async (req, res) => {
     if (!call) return res.status(200).send("ok");
 
     const dialStatus = req.body.CallStatus;
-    console.log("DialCallStatus:", dialStatus);
+    const dialDuration = Number(req.body.CallDuration || 0);
+    console.log("DialCallStatus:", dialStatus, "Duration:", dialDuration);
 
     if (dialStatus) {
       call.dialStatus = dialStatus;
       await call.save();
     }
 
+    // Destination answered: start billing period
+    if (dialStatus === "answered") {
+      if (!call.answerTime) {
+        call.answerTime = new Date();
+      }
+      call.status = "connected";
+      call.billingStatus = "pending";
+      await call.save();
+    }
+
+    // Destination call ended (hung up or completed)
+    if (dialStatus === "completed") {
+      call.endTime = new Date();
+      call.durationSeconds = dialDuration;
+      const roundedMinutes = Math.ceil(dialDuration / 60);
+      call.durationMinutesRounded = roundedMinutes;
+      const totalCost = roundedMinutes * call.ratePerMinute;
+      call.cost = totalCost;
+
+      // Bill the wallet and create transaction if not already billed
+      if (call.billingStatus !== "billed") {
+        const wallet = await Wallet.findOne({ userId: call.userId });
+        if (wallet) {
+          wallet.balance = Math.max(0, wallet.balance - totalCost);
+          await wallet.save();
+
+          await Transaction.create({
+            userId: call.userId,
+            type: "call_charge",
+            amount: totalCost,
+            description: `Call to ${call.receiverNumber}`,
+            paymentProvider: "twilio",
+            paymentReference: call.providerCallId
+          });
+
+          call.billingStatus = "billed";
+        }
+      }
+
+      call.status = "completed";
+      call.disconnectReason = "completed";
+      await call.save();
+    }
+
+    // Destination failed/ busy / no-answer / canceled
     if (["busy", "failed", "no-answer", "canceled"].includes(dialStatus)) {
       call.status = "failed";
       call.billingStatus = "failed";
       call.endTime = new Date();
+      call.durationSeconds = 0;
+      call.durationMinutesRounded = 0;
+      call.cost = 0;
       call.disconnectReason = dialStatus;
       await call.save();
     }
