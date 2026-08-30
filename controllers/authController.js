@@ -50,7 +50,7 @@ exports.register = async (req, res) => {
 
     await user.save();
 
-    // ✅ SMS VERIFICATION
+    // SMS VERIFICATION
     if (phoneNumber && code) {
       try {
         await client.messages.create({
@@ -77,7 +77,17 @@ exports.register = async (req, res) => {
       isAdmin: user.isAdmin,
       phoneNumber: user.phoneNumber || null,
       phoneVerified: user.phoneVerified,
-      requiresVerification: !!phoneNumber
+      requiresVerification: !!phoneNumber,
+      user: {
+        _id: user._id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phoneNumber: user.phoneNumber,
+        emailVerified: user.emailVerified,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      }
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -120,7 +130,17 @@ exports.verifyCode = async (req, res) => {
       message: "Phone verified successfully",
       phoneNumber: user.phoneNumber,
       verifiedCallerId: user.verifiedCallerId,
-      callerIdMode: user.callerIdMode
+      callerIdMode: user.callerIdMode,
+      user: {
+        _id: user._id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phoneNumber: user.phoneNumber,
+        emailVerified: user.emailVerified,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      }
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -153,7 +173,6 @@ exports.resendCode = async (req, res) => {
     user.codeExpiry = new Date(Date.now() + 10 * 60 * 1000);
     await user.save();
 
-    // ✅ SMS RESEND
     try {
       await client.messages.create({
         body: `Your DialAfrica verification code is: ${code}`,
@@ -202,7 +221,17 @@ exports.login = async (req, res) => {
       userId: user._id,
       isAdmin: user.isAdmin,
       phoneNumber: user.phoneNumber || null,
-      phoneVerified: user.phoneVerified
+      phoneVerified: user.phoneVerified,
+      user: {
+        _id: user._id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phoneNumber: user.phoneNumber,
+        emailVerified: user.emailVerified,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      }
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
