@@ -170,15 +170,15 @@ exports.voiceWebhook = async (req, res) => {
       return res.type("text/xml").send(response.toString());
     }
 
-    const parsedMaxSeconds = Number(maxSeconds || 0);
     const dialOptions = {
-      callerId: outgoingCallerId && isValidInternationalNumber(outgoingCallerId)
-        ? outgoingCallerId
-        : process.env.TWILIO_PHONE_NUMBER
-    };
-    if (parsedMaxSeconds > 0) {
-      dialOptions.timeLimit = parsedMaxSeconds;
-    }
+  callerId: outgoingCallerId && isValidInternationalNumber(outgoingCallerId)
+    ? outgoingCallerId
+    : process.env.TWILIO_PHONE_NUMBER,
+  timeout: 45, // ✅ ring for up to 45 seconds (default 30)
+};
+if (parsedMaxSeconds > 0) {
+  dialOptions.timeLimit = parsedMaxSeconds;
+}
 
     console.log("ATTEMPTING TO DIAL DESTINATION:", receiverNumber);
     console.log("CALLER ID USED:", dialOptions.callerId);
