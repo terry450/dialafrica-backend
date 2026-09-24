@@ -2,6 +2,15 @@ const Call = require("../models/Call");
 const Wallet = require("../models/Wallet");
 const Transaction = require("../models/Transaction");
 const { getRateFromNumber } = require("../config/rates");
+const twilio = require("twilio");
+
+// Initialize Twilio client helper
+const getTwilioClient = () => {
+  return twilio(
+    process.env.TWILIO_ACCOUNT_SID,
+    process.env.TWILIO_AUTH_TOKEN
+  );
+};
 
 // Validate international phone numbers (E.164)
 function isValidInternationalNumber(number) {
@@ -271,6 +280,19 @@ exports.endCall = async (req, res) => {
       return res.status(404).json({
         message: "Wallet not found"
       });
+    }
+
+    // 🔥 FIX: If this is a Twilio call that is still ringing/initiated, tell Twilio to hang up.
+    // This ensures the destination phone stops ringing immediately when the user taps "End".
+    if (call.provider === "twilio" && call.providerCallId) {
+      try {
+        const client = getTwilioClient();
+        await client.calls(call.providerCallId).update({ status: "completed" });
+        console.log(`✅ Twilio call ${call.providerCallId} hung up successfully`);
+      } catch (twilioErr) {
+        // Harmless if the call already ended on Twilio's side
+        console.log(`⚠️ Twilio hangup warning:`, twilioErr.message);
+      }
     }
 
     call.endTime = new Date();
