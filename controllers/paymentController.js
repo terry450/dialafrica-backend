@@ -30,7 +30,8 @@ exports.createCheckoutSession = async (req, res) => {
     }
 
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card", "paypal"], // ✅ original working types
+      // ✅ Removed payment_method_types — Stripe auto-detects from your dashboard
+      // This enables Card, Apple Pay, Google Pay, PayPal, and Link automatically
       mode: "payment",
       line_items: [
         {
