@@ -170,17 +170,15 @@ exports.voiceWebhook = async (req, res) => {
       return res.type("text/xml").send(response.toString());
     }
 
-    const parsedMaxSeconds = Number(maxSeconds || 0);   // ✅ ADD THIS LINE
+    const parsedMaxSeconds = Number(maxSeconds || 0);
 
-    // Inside your voiceWebhook function...
-
-const dialOptions = {
-  callerId: outgoingCallerId && isValidInternationalNumber(outgoingCallerId)
-    ? outgoingCallerId
-    : process.env.TWILIO_PHONE_NUMBER,
-  timeout: 45, // ring for up to 45 seconds
-  ringTone: 'uk', // 👈 ADD THIS LINE
-};
+    const dialOptions = {
+      callerId: outgoingCallerId && isValidInternationalNumber(outgoingCallerId)
+        ? outgoingCallerId
+        : process.env.TWILIO_PHONE_NUMBER,
+      timeout: 45, // ring for up to 45 seconds
+      ringTone: "uk", // play UK ringtone while the destination rings
+    };
     if (parsedMaxSeconds > 0) {
       dialOptions.timeLimit = parsedMaxSeconds;
     }
@@ -451,6 +449,12 @@ exports.dialStatusWebhook = async (req, res) => {
 
     // Destination call ended (hung up or completed)
     if (dialStatus === "completed") {
+      // ✅ FIX: Fallback for answerTime — if Twilio skipped the "answered" webhook
+      // (short calls sometimes do), derive it from endTime minus call duration.
+      if (!call.answerTime) {
+        call.answerTime = new Date(Date.now() - dialDuration * 1000);
+      }
+
       call.endTime = new Date();
       call.durationSeconds = dialDuration;
       const roundedMinutes = Math.ceil(dialDuration / 60);
